@@ -1,18 +1,15 @@
 
 import streamlit as st
-from ollama import chat
+import requests
 
-# Page settings
 st.set_page_config(
     page_title="ML Guide",
     page_icon="🤖"
 )
 
-# GUI title
 st.title("🤖 ML Guide")
 st.caption("Your Machine Learning Assistant")
 
-# Initialize conversation history
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {
@@ -24,17 +21,14 @@ if "messages" not in st.session_state:
         }
     ]
 
-# Display previous messages
 for message in st.session_state.messages:
     if message["role"] in ["user", "assistant"]:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-# Accept a new question
 question = st.chat_input("Ask me about Machine Learning...")
 
 if question:
-    # Save and display the user question
     st.session_state.messages.append({
         "role": "user",
         "content": question
@@ -43,25 +37,49 @@ if question:
     with st.chat_message("user"):
         st.markdown(question)
 
-    # Generate the AI response
     with st.chat_message("assistant"):
         with st.spinner("ML Guide is thinking..."):
-            response = chat(
-                model="llama3.2:1b",
-                messages=st.session_state.messages
-            )
+            try:
+                host = st.secrets["OLLAMA_HOST"].rstrip("/")
+                token = st.secrets["OLLAMA_PROXY_TOKEN"]
 
-            answer = response.message.content
-            st.markdown(answer)
+                response = requests.post(
+                    f"{host}/api/chat",
+                    headers={
+                        "Authorization": f"Bearer {token}"
+                    },
+                    json={
+                        "model": "llama3.2:1b",
+                        "messages": st.session_state.messages,
+                        "stream": False
+                    },
+                    timeout=300
+                )
 
-    # Save the assistant response
-    st.session_state.messages.append({
-        "role": "assistant",
-        "content": answer
-    })
+                response.raise_for_status()
+                answer = response.json()["message"]["content"]
 
+                st.markdown(answer)
 
-# Footer credit
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": answer
+                })
+
+            except KeyError:
+                st.error(
+                    "Missing OLLAMA_HOST or OLLAMA_PROXY_TOKEN "
+                    "in Streamlit Secrets."
+                )
+                st.session_state.messages.pop()
+
+            except (requests.RequestException, ValueError):
+                st.error(
+                    "Could not connect to ML Guide's local AI model. "
+                    "Please check that your laptop and tunnel are running."
+                )
+                st.session_state.messages.pop()
+
 st.markdown(
     """
     <style>
